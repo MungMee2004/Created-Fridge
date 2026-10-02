@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 S = 400  # ขนาดผืนผ้าใบตอนวาด (จะย่อลงให้เนียน)
 
 ICON_LABELS = {
-    "fish": "ปลา", "chicken": "ไก่", "steak": "เนื้อวัว",
+    "fish": "ปลา", "chicken": "ไก่", "steak": "เนื้อ",
     "egg": "ไข่", "milk": "นม", "lettuce": "ผักกาดหอม",
     "carrot": "แครอท", "yogurt": "โยเกิร์ต", "chocolate": "ช็อกโกแลต",
     "chips": "มันฝรั่งทอด", "apple": "แอปเปิ้ล", "cheese": "ชีส",

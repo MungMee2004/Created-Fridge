@@ -6,7 +6,8 @@ import tkinter.font as tkfont
 
 import customtkinter as ctk
 
-from fridge_core import (CATEGORY_TH, Item, FridgeConfig, d,
+from fridge_core import (CATEGORY_TH, Item, FridgeConfig, d, fmt_dt, fmt_now,
+                         countdown_text, seconds_left,
                          bubble_sort_by_expiry, is_sorted_by_expiry,
                          insertion_sort_insert, insertion_sort_all,
                          selection_sort_by_smell, merge_sort, merge_fridges,
@@ -15,7 +16,7 @@ from fridge_icons import make_icon, ICON_LABELS
 
 SHELVES, SLOTS = 3, 3
 N = SHELVES * SLOTS
-CARD_W, CARD_H = 138, 158
+CARD_W, CARD_H = 140, 172
 
 FONT = "Tahoma"
 _ICON_CACHE = {}
@@ -52,17 +53,21 @@ def darken(hex_color, factor=0.82):
     return "#%02x%02x%02x" % (int(r * factor), int(g * factor), int(b * factor))
 
 
-def expiry_style(days):
-    """คืนค่า (สีป้าย, ข้อความ) ตามจำนวนวันที่เหลือ"""
-    if days < 0:
-        return "#c92a2a", f"หมดอายุแล้ว {-days} วัน"
-    if days == 0:
-        return "#c92a2a", "หมดอายุวันนี้"
-    if days <= 3:
-        return "#e03131", f"เหลือ {days} วัน"
-    if days <= 7:
-        return "#f08c00", f"เหลือ {days} วัน"
-    return "#2f9e44", f"เหลือ {days} วัน"
+# =====================================================================
+# [แก้ไขตรงนี้ C]  เกณฑ์สีของป้ายวันหมดอายุ (คำนวณจากเวลาปัจจุบัน ณ ขณะนั้น)
+#   เปลี่ยนจำนวนวัน 3 และ 7 ได้ตามต้องการ
+# =====================================================================
+def expiry_style(item):
+    """คืนค่า (สีป้าย, ข้อความเวลาที่เหลือ) ของวัตถุดิบ"""
+    secs = seconds_left(item.expiry)
+    text = countdown_text(item.expiry)
+    if secs < 0:
+        return "#8b1e1e", text
+    if secs <= 3 * 86400:
+        return "#e03131", text
+    if secs <= 7 * 86400:
+        return "#f08c00", text
+    return "#2f9e44", text
 
 
 # ---------------------------------------------------------------- dialog
@@ -73,7 +78,7 @@ class AddItemDialog(ctk.CTkToplevel):
         super().__init__(master)
         self.cfg, self.on_submit = cfg, on_submit
         self.title(f"เพิ่มของใหม่ - {cfg.title}")
-        self.geometry("380x500")
+        self.geometry("380x520")
         self.resizable(False, False)
 
         ctk.CTkLabel(self, text="เพิ่มของที่เพิ่งซื้อมา", font=F(20, True)
@@ -92,10 +97,16 @@ class AddItemDialog(ctk.CTkToplevel):
                                      button_color=darken(cfg.accent))
         self.cat.pack(fill="x", pady=(2, 10))
 
-        ctk.CTkLabel(body, text="หมดอายุในอีกกี่วัน", font=F(13), anchor="w").pack(fill="x")
-        self.days = ctk.CTkEntry(body, font=F(14))
+        ctk.CTkLabel(body, text="หมดอายุในอีกกี่วัน  /  เวลา (ชม.:นาที)", font=F(13),
+                     anchor="w").pack(fill="x")
+        row_exp = ctk.CTkFrame(body, fg_color="transparent")
+        row_exp.pack(fill="x", pady=(2, 10))
+        self.days = ctk.CTkEntry(row_exp, font=F(14), width=120)
         self.days.insert(0, "7")
-        self.days.pack(fill="x", pady=(2, 10))
+        self.days.pack(side="left", expand=True, fill="x", padx=(0, 6))
+        self.time = ctk.CTkEntry(row_exp, font=F(14), width=120)
+        self.time.insert(0, "18:00")
+        self.time.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
         self.smell_label = ctk.CTkLabel(body, text="ความแรงของกลิ่น (เนื้อสัตว์): 5",
                                         font=F(13), anchor="w")
@@ -147,9 +158,15 @@ class AddItemDialog(ctk.CTkToplevel):
         except ValueError:
             self.error.configure(text="จำนวนวันต้องเป็นตัวเลขจำนวนเต็ม")
             return
+        try:
+            hh, mm = (int(x) for x in self.time.get().strip().split(":"))
+            expiry = d(days, hh, mm)
+        except ValueError:
+            self.error.configure(text="เวลาต้องเป็นรูปแบบ ชม.:นาที เช่น 18:30")
+            return
         cat = {v: k for k, v in CATEGORY_TH.items()}[self.cat.get()]
         kind = {v: k for k, v in ICON_LABELS.items()}[self.icon.get()]
-        item = Item(name, cat, d(days), kind,
+        item = Item(name, cat, expiry, kind,
                     int(self.smell.get()) if cat == "meat" else 0,
                     f"ตู้เย็น {self.cfg.fid}")
         self.on_submit(item)
@@ -168,6 +185,9 @@ class FridgePanel(ctk.CTkFrame):
         for i, it in enumerate(cfg.create_items()[:N]):
             self.slots[i] = it
         self._widgets, self._flash_job = [], None
+        self._undo = None                          # (วัตถุดิบ, ช่องเดิม) ที่เพิ่งนำออก
+        self._pills = []                           # (วัตถุดิบ, ป้ายเวลาที่เหลือ)
+        self.selected = None                       # วัตถุดิบที่คลิกเลือกไว้
         self._build()
         self.render()
 
@@ -233,26 +253,38 @@ class FridgePanel(ctk.CTkFrame):
         self.entry.grid(row=1, column=1, padx=4, pady=3, sticky="ew")
         self.entry.bind("<Return>", lambda e: self.action_binary())
         btn("ค้นหาชื่อ\n(Binary search)", self.action_binary, 2, 1)
+        rm = btn("นำวัตถุดิบออกจากตู้  (คลิกการ์ดเพื่อเลือกก่อน)", self.action_remove, 0, 2)
+        rm.configure(fg_color="#c92a2a", hover_color="#a61e1e", height=38)
+        rm.grid_configure(columnspan=3)
 
-        self.status = ctk.CTkLabel(self, text="พร้อมใช้งาน - เลือกปุ่มด้านบนเพื่อจัดการตู้เย็น",
+        self.status = ctk.CTkLabel(self, text="พร้อมใช้งาน - กดปุ่ม × สีแดงที่มุมการ์ดเพื่อนำของออกจากตู้",
                                    font=F(13), text_color="#374151", anchor="w",
                                    justify="left", wraplength=470, height=44)
         self.status.grid(row=3, column=0, columnspan=2, sticky="ew", padx=22, pady=(2, 12))
+        self.undo_btn = ctk.CTkButton(self, text="เลิกทำ - นำของกลับเข้าตู้", font=F(13, True),
+                                      height=34, corner_radius=12, fg_color="#4b5563",
+                                      hover_color="#374151", command=self.undo_remove)
+        self.undo_btn.grid(row=4, column=0, columnspan=2, padx=22, pady=(0, 14))
+        self.undo_btn.grid_remove()
 
     # ---------- วาดของในตู้
     def render(self, highlight=None):
         highlight = highlight or set()
         for w in self._widgets:
             w.destroy()
-        self._widgets = []
+        self._widgets, self._pills = [], []
         for idx in range(N):
             shelf, col = divmod(idx, SLOTS)
             it = self.slots[idx]
+            if it is not None and id(it) in highlight:
+                border, bcolor = 4, "#ffb703"          # เหลือง = ผลการค้นหา/จัดเรียง
+            elif it is not None and it is self.selected:
+                border, bcolor = 4, "#3b82f6"          # น้ำเงิน = คลิกเลือกไว้
+            else:
+                border, bcolor = 0, "#ffb703"
             slot = ctk.CTkFrame(self.shelf_frames[shelf], width=CARD_W, height=CARD_H,
-                                corner_radius=16,
-                                fg_color="white" if it else "#e4eef2",
-                                border_width=4 if (it and id(it) in highlight) else 0,
-                                border_color="#ffb703")
+                                corner_radius=16, fg_color="white" if it else "#e4eef2",
+                                border_width=border, border_color=bcolor)
             slot.grid(row=0, column=col, padx=4, pady=(0, 4))
             slot.pack_propagate(False)
             self._widgets.append(slot)
@@ -260,15 +292,41 @@ class FridgePanel(ctk.CTkFrame):
                 ctk.CTkLabel(slot, text="ว่าง", font=F(13), text_color="#9db0b8"
                              ).pack(expand=True)
                 continue
-            color, text = expiry_style(it.days_left())
+            color, text = expiry_style(it)
             meta = f"กลิ่น {it.smell}/10" if it.category == "meat" else CATEGORY_TH[it.category]
-            ctk.CTkLabel(slot, text="", image=icon(it.icon, 64)).pack(pady=(10, 0))
-            ctk.CTkLabel(slot, text=it.name, font=F(15, True),
-                         text_color="#1f2937").pack()
-            ctk.CTkLabel(slot, text=meta, font=F(11), text_color="#6b7280").pack()
-            ctk.CTkLabel(slot, text=text, font=F(11, True), text_color="white",
-                         fg_color=color, corner_radius=10, height=22
-                         ).pack(pady=(5, 0), padx=8)
+            parts = [
+                ctk.CTkLabel(slot, text="", image=icon(it.icon, 52)),
+                ctk.CTkLabel(slot, text=it.name, font=F(15, True), text_color="#1f2937"),
+                ctk.CTkLabel(slot, text=meta, font=F(11), text_color="#6b7280"),
+                ctk.CTkLabel(slot, text=fmt_dt(it.expiry), font=F(11), text_color="#374151"),
+            ]
+            parts[0].pack(pady=(8, 0))
+            for lbl in parts[1:]:
+                lbl.pack()
+            pill = ctk.CTkLabel(slot, text=text, font=F(11, True), text_color="white",
+                                fg_color=color, corner_radius=10, height=22)
+            pill.pack(pady=(4, 0), padx=8)
+            self._pills.append((it, pill))
+            for w in [slot] + parts + [pill]:          # คลิกที่ไหนในการ์ดก็เลือกได้
+                w.bind("<Button-1>", lambda e, i=idx: self._select(i))
+            # ปุ่ม × มุมขวาบนของการ์ด: กดแล้วนำวัตถุดิบนี้ออกทันที (มีปุ่มเลิกทำ)
+            ctk.CTkButton(slot, text="×", width=26, height=26, corner_radius=13,
+                          font=F(17, True), fg_color="#e03131", hover_color="#a61e1e",
+                          text_color="white", command=lambda x=it: self.remove_item(x)
+                          ).place(relx=1.0, x=-5, y=5, anchor="ne")
+
+    def refresh_countdowns(self):
+        """อัปเดตป้ายเวลาที่เหลือตามนาฬิกาปัจจุบัน (เรียกทุกวินาทีจาก App)"""
+        for it, pill in self._pills:
+            color, text = expiry_style(it)
+            pill.configure(text=text, fg_color=color)
+
+    def _select(self, idx):
+        it = self.slots[idx]
+        self.selected = None if (it is None or it is self.selected) else it
+        if self.selected is not None:
+            self.say(f"เลือก '{it.name}' แล้ว - กดปุ่ม × ที่มุมการ์ด หรือปุ่มแดงด้านล่างเพื่อนำออก")
+        self.after(1, self.render)
 
     def flash(self, ids):
         """ไฮไลต์การ์ดด้วยกรอบสีเหลือง 2.5 วินาที"""
@@ -336,7 +394,7 @@ class FridgePanel(ctk.CTkFrame):
         for i, it in zip(pos, ordered):
             self.slots[i] = it
         self.flash({id(item)})
-        self.say(f"Insertion sort: แทรก '{item.name}' (เหลือ {item.days_left()} วัน) "
+        self.say(f"Insertion sort: แทรก '{item.name}' ({countdown_text(item.expiry)}) "
                  f"ลำดับที่ {at + 1} ของชั้นวาง -> {self._pos_text(self._slot_of(item))}")
 
     # ---------- 1.3 Selection sort
@@ -387,7 +445,50 @@ class FridgePanel(ctk.CTkFrame):
         it = by_name[idx]
         self.flash({id(it)})
         self.say(f"Binary search: พบ '{it.name}' ใน {steps} รอบ ที่ {self._pos_text(self._slot_of(it))} "
-                 f"(เหลือ {it.days_left()} วัน)")
+                 f"({countdown_text(it.expiry)})")
+
+
+    # ---------- นำวัตถุดิบออก
+    def action_remove(self):
+        """ปุ่มแดงด้านล่าง: นำการ์ดที่เลือกไว้ (หรือชื่อที่พิมพ์ในช่องค้นหา) ออก"""
+        it = self.selected
+        if it is None or all(x is not it for x in self.slots):
+            name = self.entry.get().strip()
+            if not name:
+                self.say("กดปุ่ม × ที่มุมการ์ดได้เลย หรือคลิกเลือกการ์ด/พิมพ์ชื่อในช่องค้นหาก่อนกดปุ่มนี้")
+                return
+            it = next((x for x in self.slots if x and x.name == name), None)
+            if it is None:
+                self.say(f"ไม่พบ '{name}' ในตู้นี้")
+                return
+        self.remove_item(it)
+
+    def remove_item(self, it):
+        idx = self._slot_of(it)
+        self.slots[idx] = None
+        if self.selected is it:
+            self.selected = None
+        self._undo = (it, idx)
+        self.render()
+        self.undo_btn.grid()
+        self.say(f"นำ '{it.name}' ออกจากตู้แล้ว (เดิมอยู่ {self._pos_text(idx)}) - "
+                 f"กำหนดหมดอายุ {fmt_dt(it.expiry)}")
+
+    def undo_remove(self):
+        if self._undo is None:
+            return
+        it, idx = self._undo
+        if self.slots[idx] is not None:                # ช่องเดิมถูกใช้แล้ว -> หาช่องว่างอื่น
+            empties = [i for i, x in enumerate(self.slots) if x is None]
+            if not empties:
+                self.say("ตู้เย็นเต็มแล้ว ไม่สามารถนำ '" + it.name + "' กลับเข้าตู้ได้")
+                return
+            idx = empties[0]
+        self.slots[idx] = it
+        self._undo = None
+        self.undo_btn.grid_remove()
+        self.flash({id(it)})
+        self.say(f"นำ '{it.name}' กลับเข้าตู้แล้ว ({self._pos_text(idx)})")
 
 
 # ---------------------------------------------------------------- app
@@ -401,8 +502,9 @@ class App(ctk.CTk):
         pick_font(self)
         self.configs = configs
         self.title("Fridge Inventory Manager - ระบบจัดการตู้เย็นและวันหมดอายุ")
-        self.geometry(f"{min(1240, 80 + 580 * len(configs))}x880")
-        self.minsize(620, 780)
+        height = min(940, self.winfo_screenheight() - 80)
+        self.geometry(f"{min(1240, 80 + 580 * len(configs))}x{height}")
+        self.minsize(620, 520)
         self.configure(fg_color="#11151c")
 
         top = ctk.CTkFrame(self, fg_color="transparent")
@@ -413,13 +515,20 @@ class App(ctk.CTk):
                      ).pack(anchor="w")
         ctk.CTkLabel(titles, text="ระบบจัดการตู้เย็นและวันหมดอายุ", font=F(14),
                      text_color="#9ca3af").pack(anchor="w")
+        self._merge_pills = []
         if len(configs) > 1:
             ctk.CTkButton(top, text="รวมรายการทุกตู้เย็น\n(Merge sort)", font=F(13, True),
                           height=52, corner_radius=16, fg_color="#7048e8",
                           hover_color="#5f3dc4", command=self.show_merge
                           ).pack(side="right")
+        clock_box = ctk.CTkFrame(top, fg_color="#1f2530", corner_radius=14)
+        clock_box.pack(side="right", padx=14)
+        ctk.CTkLabel(clock_box, text="เวลาปัจจุบัน (อ้างอิงนาฬิกาเครื่อง)", font=F(11),
+                     text_color="#9ca3af").pack(padx=14, pady=(6, 0))
+        self.clock = ctk.CTkLabel(clock_box, text=fmt_now(), font=F(15, True))
+        self.clock.pack(padx=14, pady=(0, 6))
 
-        content = ctk.CTkFrame(self, fg_color="transparent")
+        content = ctk.CTkScrollableFrame(self, fg_color="transparent")   # จอเตี้ยก็เลื่อนลงไปกดปุ่มได้
         content.pack(fill="both", expand=True, padx=14, pady=4)
         self.panels = []
         for c, cfg in enumerate(configs):
@@ -438,6 +547,23 @@ class App(ctk.CTk):
             ctk.CTkLabel(legend, text=f"  {text}  ", font=F(12, True), text_color="white",
                          fg_color=color, corner_radius=10, height=24
                          ).pack(side="left", padx=4)
+        self._tick()
+
+    def _tick(self):
+        """รันทุก 1 วินาที: อัปเดตนาฬิกาและเวลาที่เหลือของทุกการ์ด"""
+        self.clock.configure(text=fmt_now())
+        for p in self.panels:
+            p.refresh_countdowns()
+        alive = []
+        for it, lbl in self._merge_pills:              # ป้ายในหน้าต่าง Merge (ถ้าเปิดอยู่)
+            try:
+                color, text = expiry_style(it)
+                lbl.configure(text=f"  {text}  ", fg_color=color)
+                alive.append((it, lbl))
+            except Exception:
+                pass
+        self._merge_pills = alive
+        self.after(1000, self._tick)
 
     # ---------- 1.4 Merge sort
     def show_merge(self):
@@ -446,6 +572,7 @@ class App(ctk.CTk):
         win.geometry("760x680")
         merged = merge_fridges(*[p.get_items() for p in self.panels])
         accents = {f"ตู้เย็น {c.fid}": c.accent for c in self.configs}
+        self._merge_pills = []
 
         ctk.CTkLabel(win, text="รวมรายการจากทุกตู้เย็น", font=F(22, True)
                      ).pack(pady=(16, 0))
@@ -465,13 +592,15 @@ class App(ctk.CTk):
             info = ctk.CTkFrame(row, fg_color="transparent")
             info.grid(row=0, column=2, sticky="w", padx=6)
             ctk.CTkLabel(info, text=it.name, font=F(16, True), anchor="w").pack(anchor="w")
-            ctk.CTkLabel(info, text=f"หมดอายุ {it.expiry}  |  {CATEGORY_TH[it.category]}",
+            ctk.CTkLabel(info, text=f"หมดอายุ {fmt_dt(it.expiry)}  |  {CATEGORY_TH[it.category]}",
                          font=F(12), text_color="#9ca3af").pack(anchor="w")
             ctk.CTkLabel(row, text=f"  {it.fridge}  ", font=F(12, True), text_color="white",
                          fg_color=accents.get(it.fridge, "#555"), corner_radius=10,
                          height=24).grid(row=0, column=3, padx=6)
-            color, text = expiry_style(it.days_left())
-            ctk.CTkLabel(row, text=f"  {text}  ", font=F(12, True), text_color="white",
-                         fg_color=color, corner_radius=10, height=24
-                         ).grid(row=0, column=4, padx=(0, 12))
+            color, text = expiry_style(it)
+            pill = ctk.CTkLabel(row, text=f"  {text}  ", font=F(12, True),
+                                text_color="white", fg_color=color,
+                                corner_radius=10, height=24)
+            pill.grid(row=0, column=4, padx=(0, 12))
+            self._merge_pills.append((it, pill))
         win.after(100, win.lift)

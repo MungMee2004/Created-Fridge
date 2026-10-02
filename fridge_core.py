@@ -7,29 +7,88 @@ fridge_core.py  --  ข้อมูลและอัลกอริทึมก
    Sequential search / Binary search
 """
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from typing import Callable, List
 
 CATEGORY_TH = {"meat": "เนื้อสัตว์", "veg": "ผัก", "dairy": "นม/ไข่",
                "snack": "ขนม", "fruit": "ผลไม้"}
 
+# =====================================================================
+# [แก้ไขตรงนี้ A]  การตั้งค่าการแสดงวันที่
+# =====================================================================
+BUDDHIST_ERA = True      # True = แสดงปี พ.ศ. (2569) / False = แสดงปี ค.ศ. (2026)
 
-def d(days: int) -> date:
-    """วันที่ที่อีก days วันนับจากวันนี้"""
-    return date.today() + timedelta(days=days)
+THAI_MONTHS_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+                     "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+THAI_MONTHS_FULL = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+THAI_WEEKDAYS = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]
+
+
+# =====================================================================
+# [แก้ไขตรงนี้ B]  แหล่งอ้างอิงเวลาปัจจุบัน
+#   ทุกอย่าง (เวลาที่เหลือ, สีป้าย, นาฬิกา) คำนวณจากฟังก์ชัน now() นี้
+#   ปกติอ่านจากนาฬิกาเครื่อง จึงเปลี่ยนเองอัตโนมัติทุกวินาที
+#   (ถ้าอยากจำลองวันอื่นเพื่อทดสอบ ให้แก้ให้คืน datetime(2026, 10, 20, 8, 0))
+# =====================================================================
+def now() -> datetime:
+    return datetime.now()
+
+
+def d(days: int, hour: int = 23, minute: int = 59) -> datetime:
+    """วัน-เวลาที่อีก days วันนับจากวันนี้ (ที่ชั่วโมง:นาที ที่กำหนด)
+    ตัวอย่าง d(3, 18, 30) = อีก 3 วัน เวลา 18:30"""
+    t = now() + timedelta(days=days)
+    return t.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def _year(dt: datetime) -> int:
+    return dt.year + 543 if BUDDHIST_ERA else dt.year
+
+
+def fmt_dt(dt: datetime) -> str:
+    """เช่น 9 ต.ค. 2569 18:30"""
+    return f"{dt.day} {THAI_MONTHS_SHORT[dt.month - 1]} {_year(dt)} {dt:%H:%M}"
+
+
+def fmt_now() -> str:
+    """เช่น วันศุกร์ที่ 2 ตุลาคม 2569  เวลา 14:23:05"""
+    t = now()
+    return (f"วัน{THAI_WEEKDAYS[t.weekday()]}ที่ {t.day} {THAI_MONTHS_FULL[t.month - 1]} "
+            f"{_year(t)}  เวลา {t:%H:%M:%S}")
+
+
+def seconds_left(expiry: datetime) -> int:
+    return int((expiry - now()).total_seconds())
+
+
+def countdown_text(expiry: datetime) -> str:
+    """ข้อความเวลาที่เหลือ/เลยกำหนด คำนวณจากเวลาปัจจุบันทุกครั้งที่เรียก"""
+    secs = seconds_left(expiry)
+    expired = secs < 0
+    days, rem = divmod(abs(secs), 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if days:
+        body = f"{days} วัน {hours} ชม."
+    elif hours:
+        body = f"{hours} ชม. {minutes} น."
+    else:
+        body = f"{minutes} น. {seconds} วิ"
+    return ("หมดอายุแล้ว " if expired else "เหลือ ") + body
 
 
 @dataclass
 class Item:
     name: str
     category: str          # meat / veg / dairy / snack / fruit
-    expiry: date
+    expiry: datetime       # วัน-เวลาหมดอายุ
     icon: str              # ชื่อไอคอนใน fridge_icons
     smell: int = 0         # ความแรงของกลิ่น 0-10 (ใช้กับเนื้อสัตว์)
     fridge: str = ""       # ชื่อตู้เย็นที่เก็บอยู่
 
     def days_left(self) -> int:
-        return (self.expiry - date.today()).days
+        return (self.expiry - now()).days
 
 
 @dataclass
