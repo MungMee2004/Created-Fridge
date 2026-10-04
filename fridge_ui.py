@@ -330,14 +330,14 @@ class FridgePanel(ctk.CTkFrame):
         self.after(1, self.render)
 
     def flash(self, ids):
-        """ไฮไลต์การ์ดด้วยกรอบสีเหลือง 2.5 วินาที"""
+        """ไฮไลต์การ์ดด้วยกรอบสีเหลือง 30 วินาที"""
         if self._flash_job:
             try:
                 self.after_cancel(self._flash_job)
             except Exception:
                 pass
         self.render(highlight=set(ids))
-        self._flash_job = self.after(2500, self.render)
+        self._flash_job = self.after(30000, self.render)
 
     def say(self, message):
         self.status.configure(text=message)
