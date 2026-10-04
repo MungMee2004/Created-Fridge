@@ -3,7 +3,7 @@ fridge_core.py  --  ข้อมูลและอัลกอริทึมก
 
 1) การเรียงลำดับข้อมูล (Sorting)
    Bubble / Insertion / Selection / Merge sort
-2) การค้นหาข้อมูล (Searching)
+2) การค้นหาข้อมูล (Searching) 
    Sequential search / Binary search
 """
 from dataclasses import dataclass, field
@@ -106,6 +106,7 @@ class FridgeConfig:
 
 # ---------------------------------------------------------------
 # Sorting
+# บับเบิลอัลกอลิทึม 111-123
 # ---------------------------------------------------------------
 def bubble_sort_by_expiry(items):
     """Bubble sort: ของใกล้หมดอายุขยับมาอยู่หน้าสุด"""
@@ -121,11 +122,11 @@ def bubble_sort_by_expiry(items):
             break
     return data
 
-
+#แทรกอัลกอลิทึม 126-127
 def is_sorted_by_expiry(items):
     return all(items[i].expiry <= items[i + 1].expiry for i in range(len(items) - 1))
 
-
+#แทรกอัลกอลิทึม 130-138
 def insertion_sort_insert(sorted_list, new_item):
     """Insertion sort: แทรกของใหม่ลงรายการที่เรียงตามวันหมดอายุอยู่แล้ว
     คืนค่า (รายการใหม่, ตำแหน่งที่แทรก)"""
@@ -136,14 +137,14 @@ def insertion_sort_insert(sorted_list, new_item):
         i -= 1
     return data, i
 
-
+#แทรกอัลกอลิทึม 141-145
 def insertion_sort_all(items):
     result = []
     for it in items:
         result, _ = insertion_sort_insert(result, it)
     return result
 
-
+#เลือกอัลกอลิทึม 148-159
 def selection_sort_by_smell(items):
     """Selection sort: เรียงกลิ่นน้อย -> มาก (ตัวสุดท้ายกลิ่นแรงที่สุด)"""
     data = items[:]
@@ -157,7 +158,7 @@ def selection_sort_by_smell(items):
             data[i], data[m] = data[m], data[i]
     return data
 
-
+#รวมอัลกอลิทึม 162-174
 def merge_sort(items, key=lambda x: x.expiry):
     """Merge sort: แบ่งครึ่งแล้วรวมกลับตาม key"""
     if len(items) <= 1:
@@ -172,7 +173,7 @@ def merge_sort(items, key=lambda x: x.expiry):
             out.append(right[j]); j += 1
     return out + left[i:] + right[j:]
 
-
+#รวมอัลกอลิทึม176-182
 def merge_fridges(*fridges):
     """รวมรายการจากหลายตู้เย็นเป็นรายการเดียว เรียงตามวันหมดอายุ"""
     combined = []
@@ -183,6 +184,7 @@ def merge_fridges(*fridges):
 
 # ---------------------------------------------------------------
 # Searching
+#ลำดับอัลกอลิทึม 189-195
 # ---------------------------------------------------------------
 def sequential_search_snack(slots):
     """Sequential search: ไล่เปิดทีละช่อง (slots อาจมี None = ช่องว่าง)
@@ -192,7 +194,7 @@ def sequential_search_snack(slots):
             return i, i + 1
     return -1, len(slots)
 
-
+# ไบนารี่คอร์ 196-210
 def binary_search_by_name(sorted_items, target):
     """Binary search: sorted_items ต้องเรียงตามชื่อแล้ว
     คืนค่า (index หรือ -1, จำนวนรอบที่เทียบ)"""

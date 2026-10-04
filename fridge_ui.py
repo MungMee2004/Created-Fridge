@@ -243,12 +243,13 @@ class FridgePanel(ctk.CTkFrame):
                               hover_color=darken(cfg.accent))
             b.grid(row=row, column=col, padx=4, pady=3, sticky="ew")
             return b
-
+#บับเบิลปุ่ม 247
         btn("เรียงวันหมดอายุ\n(Bubble sort)", self.action_bubble, 0)
         btn("เพิ่มของใหม่\n(Insertion sort)", self.action_add, 1)
         btn("เนื้อสัตว์ไว้ล่างสุด\n(Selection sort)", self.action_selection, 2)
         btn("หาขนม\n(Sequential search)", self.action_sequential, 0, 1)
-        self.entry = ctk.CTkEntry(bar, placeholder_text="ชื่อวัตถุดิบที่จะหา",
+        #ไบนารี่หาของ 251-255
+        self.entry = ctk.CTkEntry(bar, placeholder_text="ชื่อวัตถุดิบที่จะหา", 
                                   font=F(13), height=46, corner_radius=14)
         self.entry.grid(row=1, column=1, padx=4, pady=3, sticky="ew")
         self.entry.bind("<Return>", lambda e: self.action_binary())
@@ -354,6 +355,7 @@ class FridgePanel(ctk.CTkFrame):
         return f"ชั้น {shelf + 1} ช่อง {col + 1}"
 
     # ---------- 1.1 Bubble sort
+    #บับเบิลยูไอ 359-369
     def action_bubble(self):
         pos = [i for i, x in enumerate(self.slots) if x and x.category != "meat"]
         if not pos:
@@ -365,7 +367,7 @@ class FridgePanel(ctk.CTkFrame):
         self.flash({id(ordered[0])})
         self.say(f"Bubble sort: เรียงตามวันหมดอายุแล้ว  ใกล้หมดอายุที่สุดคือ "
                  f"'{ordered[0].name}' ขยับมาอยู่หน้าสุด ({self._pos_text(pos[0])})")
-
+#แทรก 371-400
     # ---------- 1.2 Insertion sort
     def action_add(self):
         AddItemDialog(self.winfo_toplevel(), self.cfg, self.add_item)
@@ -396,7 +398,7 @@ class FridgePanel(ctk.CTkFrame):
         self.flash({id(item)})
         self.say(f"Insertion sort: แทรก '{item.name}' ({countdown_text(item.expiry)}) "
                  f"ลำดับที่ {at + 1} ของชั้นวาง -> {self._pos_text(self._slot_of(item))}")
-
+#เลือก 402-412
     # ---------- 1.3 Selection sort
     def _compose_meat_bottom(self):
         meats = selection_sort_by_smell([x for x in self.slots if x and x.category == "meat"])
@@ -419,7 +421,7 @@ class FridgePanel(ctk.CTkFrame):
         self.say(f"Selection sort: ย้ายเนื้อสัตว์ลงล่างสุดเรียงตามกลิ่น  "
                  f"'{strongest.name}' กลิ่นแรงที่สุด ({strongest.smell}/10) "
                  f"อยู่ที่ {self._pos_text(self._slot_of(strongest))}")
-
+#ลำดับยูไอ 425-434
     # ---------- 2.1 Sequential search
     def action_sequential(self):
         idx, steps = sequential_search_snack(self.slots)
@@ -431,6 +433,7 @@ class FridgePanel(ctk.CTkFrame):
         self.say(f"Sequential search: เปิดดูทีละช่อง {steps} ช่อง เจอ '{it.name}' "
                  f"ที่ {self._pos_text(idx)}")
 
+    #ไบนารี่ยูไอ 435-450
     # ---------- 2.2 Binary search
     def action_binary(self):
         name = self.entry.get().strip()
